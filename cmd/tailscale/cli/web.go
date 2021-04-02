@@ -15,8 +15,10 @@ import (
 	"log"
 	"net/http"
 	"net/http/cgi"
+	"os"
 	"os/exec"
 	"runtime"
+	"sync"
 	"strings"
 
 	"github.com/peterbourgon/ff/v2/ffcli"
@@ -73,7 +75,11 @@ func runWeb(ctx context.Context, args []string) error {
 	}
 
 	if webArgs.cgi {
-		return cgi.Serve(http.HandlerFunc(webHandler))
+		if err := cgi.Serve(http.HandlerFunc(webHandler)); err != nil {
+			log.Printf("tailscale.cgi: %v", err)
+			return err
+		}
+		return nil
 	}
 	return http.ListenAndServe(webArgs.listen, http.HandlerFunc(webHandler))
 }
@@ -259,6 +265,9 @@ func tailscaleUp(ctx context.Context) (authURL string, retErr error) {
 	c, bc, ctx, cancel := connect(ctx)
 	defer cancel()
 
+	var loginOnce sync.Once
+        startLoginInteractive := func() { loginOnce.Do(func() { bc.StartLoginInteractive() }) }
+
 	bc.SetPrefs(prefs)
 
 	opts := ipn.Options{
@@ -280,10 +289,12 @@ func tailscaleUp(ctx context.Context) (authURL string, retErr error) {
 				authURL = *url
 				cancel()
 			}
+			if n.State != nil {
+				startLoginInteractive()
+			}
 		},
 	}
 	bc.Start(opts)
-	bc.StartLoginInteractive()
 	pump(ctx, bc, c)
 
 	if authURL == "" && retErr == nil {
