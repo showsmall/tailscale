@@ -36,6 +36,11 @@ func DefaultTailscaledSocket() string {
 	if runtime.GOOS == "darwin" {
 		return "/var/run/tailscaled.socket"
 	}
+	// TODO(crawshaw): does this path change with DSM7?
+	const synologySock = "/volume1/@appstore/Tailscale/var/tailscaled.sock" // SYNOPKG_PKGDEST in scripts/installer
+	if fi, err := os.Stat(filepath.Dir(synologySock)); err == nil && fi.IsDir() {
+		return synologySock
+	}
 	if fi, err := os.Stat("/var/run"); err == nil && fi.IsDir() {
 		return "/var/run/tailscale/tailscaled.sock"
 	}
