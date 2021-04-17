@@ -22,6 +22,7 @@ import (
 	"inet.af/netaddr"
 	"tailscale.com/client/tailscale"
 	"tailscale.com/ipn"
+	"tailscale.com/safesocket"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/preftype"
 	"tailscale.com/version/distro"
@@ -67,6 +68,9 @@ var upFlagSet = (func() *flag.FlagSet {
 	upf.StringVar(&upArgs.hostname, "hostname", "", "hostname to use instead of the one provided by the OS")
 	upf.StringVar(&upArgs.advertiseRoutes, "advertise-routes", "", "routes to advertise to other nodes (comma-separated, e.g. \"10.0.0.0/8,192.168.0.0/24\")")
 	upf.BoolVar(&upArgs.advertiseDefaultRoute, "advertise-exit-node", false, "offer to be an exit node for internet traffic for the tailnet")
+	if safesocket.PlatformUsesPeerCreds() {
+		upf.StringVar(&upArgs.opUser, "operator", "", "Unix username to allow to operate on tailscaled without sudo")
+	}
 	if runtime.GOOS == "linux" {
 		upf.BoolVar(&upArgs.snat, "snat-subnet-routes", true, "source NAT traffic to local routes advertised with --advertise-routes")
 		upf.StringVar(&upArgs.netfilterMode, "netfilter-mode", defaultNetfilterMode(), "netfilter mode (one of on, nodivert, off)")
@@ -102,6 +106,7 @@ var upArgs struct {
 	netfilterMode          string
 	authKey                string
 	hostname               string
+	opUser                 string
 }
 
 func warnf(format string, args ...interface{}) {
@@ -229,6 +234,7 @@ func runUp(ctx context.Context, args []string) error {
 	prefs.NoSNAT = !upArgs.snat
 	prefs.Hostname = upArgs.hostname
 	prefs.ForceDaemon = upArgs.forceDaemon
+	prefs.OperatorUser = upArgs.opUser
 
 	if runtime.GOOS == "linux" {
 		switch upArgs.netfilterMode {
@@ -428,6 +434,7 @@ func init() {
 	addPrefFlagMapping("exit-node", "ExitNodeIP", "ExitNodeIP")
 	addPrefFlagMapping("exit-node-allow-lan-access", "ExitNodeAllowLANAccess")
 	addPrefFlagMapping("unattended", "ForceDaemon")
+	addPrefFlagMapping("operator", "OperatorUser")
 }
 
 func addPrefFlagMapping(flagName string, prefNames ...string) {
@@ -456,7 +463,7 @@ func updateMaskedPrefsFromUpFlag(mp *ipn.MaskedPrefs, flagName string) {
 	case "advertise-exit-node":
 		// This pref is a shorthand for advertise-routes.
 	default:
-		panic("internal error: unhandled flag " + flagName)
+		panic(fmt.Sprintf("internal error: unhandled flag %q", flagName))
 	}
 }
 
